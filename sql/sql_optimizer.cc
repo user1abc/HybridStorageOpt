@@ -2677,8 +2677,21 @@ void JOIN::adjust_access_methods()
           tab->index=find_shortest_key(table, & table->covering_keys);
         */
         if (tab->position()->sj_strategy != SJ_OPT_LOOSE_SCAN)
-          tab->set_index(find_shortest_key(tab->table(), &tab->table()->covering_keys));
-        tab->set_type(JT_INDEX_SCAN);      // Read with index_first / index_next
+        {
+          uint index = find_shortest_key(tab->table(), & tab->table()->covering_keys);
+          index_nums = tab->table()->file->index_only_read_time(index, tab->table()->file->stats.records);
+          double idx_cost = tab->table()->file->index_only_scan_time(tab->table()->file->stats.records, index_nums, 
+                              tab->table()->bitmap_count, tab->table()->filter);
+          if (idx_cost < tab->read_time
+                              && index != tab->table()->s->primary_key) {
+            tab->read_time = idx_cost;
+            tab->set_index(index);
+            tab->set_type(JT_INDEX_SCAN);
+          }
+          //tab->set_index(index);
+          //tab->set_index(find_shortest_key(tab->table(), &tab->table()->covering_keys));
+        }
+        // tab->set_type(JT_INDEX_SCAN);      // Read with index_first / index_next
         // From table scan to index scan, thus filter effect needs no recalc.
       }
       else if (!tab->table()->no_keyread && !tl->uses_materialization())
@@ -5779,9 +5792,30 @@ bool JOIN::estimate_rowcount()
       continue;
     }
     // Approximate number of found rows and cost to read them
+
     tab->set_records(tab->found_records= tab->table()->file->stats.records);
-    const Cost_estimate table_scan_time= tab->table()->file->table_scan_cost();
-    tab->read_time= static_cast<ha_rows>(table_scan_time.total_cost());
+    test_bitmap_count(tab->table()->read_set);
+    tab->table()->bitmap_count = bitmap_count;
+    tab->table()->block_percent = max_bit / (tab->table()->read_set->n_bits);
+    tab->table()->filter = (select_lex->cond_count > 0) ? 1 : 0;
+    tab->table()->block_nums = (uint) ulonglong2double(tab->table()->file->stats.data_file_length) / IO_SIZE + 2;
+    block_nums = tab->table()->block_nums;
+    engine = tab->table()->file->engine_num();
+    tab->read_time= (ha_rows) tab->table()->file->rnd_scan_time(tab->found_records, tab->table()->block_nums, 
+                                                            tab->table()->bitmap_count, 
+                                                            tab->table()->block_percent, tab->table()->filter);
+    convert_rows = rnd_row = tab->found_records;
+    blocks = tab->table()->block_nums;
+    icp_nums = tab->table()->filter ? tab->found_records : 0;
+    sel_col = rnd_row * tab->table()->bitmap_count;
+    sel_blocks = tab->table()->block_nums * tab->table()->block_percent;
+    idxback_rows = 0;
+    index_nums = 0;
+    range_rows = 0;
+
+
+    //const Cost_estimate table_scan_time= tab->table()->file->table_scan_cost();
+    //tab->read_time= static_cast<ha_rows>(table_scan_time.total_cost());
 
     /*
       Set a max value for the cost of seek operations we can expect
@@ -5866,6 +5900,7 @@ bool JOIN::estimate_rowcount()
         add("rows", tab->found_records).
         add("cost", tab->read_time);
     }
+    predict = tab->read_time;
   }
 
   return false;
@@ -11462,3 +11497,12 @@ static uint32 get_key_length_tmp_table(Item *item)
   return len;
 }
 
+void JOIN::test_bitmap_count(MY_BITMAP *bitmap) {
+  bitmap_count = 0;
+  for (uint i = 0; i < bitmap->n_bits; i++) {
+    if (bitmap_is_set(bitmap, i)) {
+      bitmap_count++;
+      max_bit = i + 1;
+    }
+  }
+}

@@ -27,11 +27,11 @@
 %global percona_server_vendor Percona, Inc
 %global mysqldatadir /var/lib/mysql
 
-%global mysql_version @@MYSQL_VERSION@@
-%global percona_server_version @@PERCONA_VERSION@@
-%global revision @@REVISION@@
+%global mysql_version 5.7.44
+%global percona_server_version 48
+%global revision 497f936a373
 %global tokudb_backup_version %{mysql_version}-%{percona_server_version}
-%global rpm_release @@RPM_RELEASE@@
+%global rpm_release 1
 
 %global release %{percona_server_version}.%{rpm_release}%{?dist}
 
@@ -138,7 +138,7 @@ Packager:       Percona MySQL Development Team <mysqldev@percona.com>
 Vendor:         %{percona_server_vendor}
 Source4:        my_config.h
 Source5:        mysql_config.sh
-Source10:       http://jenkins.percona.com/downloads/boost/@@BOOST_PACKAGE_NAME@@.tar.gz
+Source10:       http://jenkins.percona.com/downloads/boost/boost_1_59_0.tar.gz
 Source90:       filter-provides.sh
 Source91:       filter-requires.sh
 Source999:      call-home.sh
@@ -384,11 +384,11 @@ fi
 %endif # 0%{?compatlib}
 
 %if 0%{?rhel} == 9
-  sed -i 's:/usr/bin/env python2:/usr/bin/env python3:' percona-server-@@TOKUDB_BACKUP_VERSION@@/mysql-test/suite/tokudb/t/*
-  sed -i 's:python2.7:python3:' percona-server-@@TOKUDB_BACKUP_VERSION@@/mysql-test/suite/tokudb/t/*
-  sed -i 's:python2:python3:' percona-server-@@TOKUDB_BACKUP_VERSION@@/mysql-test/suite/tokudb/t/*
-  sed -i 's|libjemalloc.so.1|libjemalloc.so.2|' percona-server-@@TOKUDB_BACKUP_VERSION@@/scripts/*.sh
-  sed -i 's|libjemalloc1|libjemalloc2|' percona-server-@@TOKUDB_BACKUP_VERSION@@/scripts/*.sh
+  sed -i 's:/usr/bin/env python2:/usr/bin/env python3:' percona-server-5.7.44-48/mysql-test/suite/tokudb/t/*
+  sed -i 's:python2.7:python3:' percona-server-5.7.44-48/mysql-test/suite/tokudb/t/*
+  sed -i 's:python2:python3:' percona-server-5.7.44-48/mysql-test/suite/tokudb/t/*
+  sed -i 's|libjemalloc.so.1|libjemalloc.so.2|' percona-server-5.7.44-48/scripts/*.sh
+  sed -i 's|libjemalloc1|libjemalloc2|' percona-server-5.7.44-48/scripts/*.sh
 %endif
 
 # Build debug versions of mysqld and libmysqld.a

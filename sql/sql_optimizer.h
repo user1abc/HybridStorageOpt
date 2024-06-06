@@ -36,6 +36,8 @@
 
 #include "sql_select.h"        // Item_null_array
 
+#include <time.h>
+
 class Cost_model_server;
 
 
@@ -224,6 +226,21 @@ public:
   uint     const_tables;   ///< Number of primary tables deemed constant
   uint     tmp_tables;     ///< Number of temporary tables used by query
   uint     send_group_parts;
+
+  uint block_nums;
+  uint counts = 0;
+  uint index_nums;
+  double predict;
+  uint rnd_row;
+  double blocks;
+  uint sel_col;
+  double sel_blocks;
+  uint icp_nums;
+  uint idxback_rows;
+  uint convert_rows;
+  uint ref_rows;
+  uint range_rows;
+  uint engine;
   /**
     Indicates that grouping will be performed on the result set during
     query execution. This field belongs to query execution.
@@ -564,7 +581,9 @@ public:
   bool make_sum_func_list(List<Item> &all_fields,
                           List<Item> &send_fields,
                           bool before_group_by, bool recompute= FALSE);
-
+  void test_bitmap_count(MY_BITMAP *bitmap);
+  uint bitmap_count;
+  double max_bit;
   /**
      Overwrites one slice with the contents of another slice.
      In the normal case, dst and src have the same size().

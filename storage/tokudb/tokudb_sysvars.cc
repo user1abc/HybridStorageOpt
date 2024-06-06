@@ -48,7 +48,7 @@ const size_t error_buffer_max_size = 1024;
 
 ulonglong   cache_size = 0;
 uint        cachetable_pool_threads = 0;
-int         cardinality_scale_percent = 0;
+int         cardinality_scale_percent = 100;
 my_bool     checkpoint_on_flush_logs = FALSE;
 uint        checkpoint_pool_threads = 0;
 uint        checkpointing_period = 0;

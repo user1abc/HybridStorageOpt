@@ -329,6 +329,18 @@ enum enum_alter_inplace_result {
 #define HA_KEY_SWITCH_NONUNIQ_SAVE 2
 #define HA_KEY_SWITCH_ALL_SAVE     3
 
+#define SCAN_COST  0.061
+#define SCAN_BLOCK_COST  0.85
+#define CONVERT_COL_COST  0.003
+#define CONVERT_SCAN_COST  3.2
+#define ICP_COST  0.2
+#define IDXBACK_COST  2.06
+#define CONVERT_COST  0.145
+#define INDEX_SCAN_COST  0.086
+#define REF_COST  0.014
+#define RANGE_COST  0.021
+#define FILTER_COST  0.05
+
 /*
   Note: the following includes binlog and closing 0.
   so: innodb + bdb + ndb + binlog + myisam + myisammrg + archive +
@@ -2692,6 +2704,49 @@ public:
 
   virtual double scan_time()
   { return ulonglong2double(stats.data_file_length) / IO_SIZE + 2; }
+
+  virtual double rnd_cost(uint records)
+  { return SCAN_COST * records; }
+  
+  virtual int engine_num()
+  { return 0; }
+
+  virtual double scan_block_cost(uint block_nums)
+  { return block_nums * SCAN_BLOCK_COST; }
+
+  virtual double convert_cost(uint records)
+  { return CONVERT_COST * records; }
+
+  virtual double convert_col_cost(uint records, uint col_nums)
+  { return CONVERT_COL_COST * col_nums * records; }
+
+  virtual double convert_scan_cost(uint block_nums, double block_percent)
+  { return CONVERT_SCAN_COST * block_nums * block_percent; }
+
+  virtual double icp_cost(uint records, bool icp)
+  { return icp ? ICP_COST * records : 0; }
+
+  virtual double idxback_cost(uint records)
+  { return IDXBACK_COST * records; }
+
+  virtual double index_scan_cost(uint records)
+  { return INDEX_SCAN_COST * records; }
+
+  virtual double ref_cost(uint records)
+  { return REF_COST * records; }
+
+  virtual double range_cost(uint records)
+  { return RANGE_COST * records; }
+
+  virtual double filter_cost(uint records)
+  { return FILTER_COST * records; }
+
+  virtual double rnd_scan_time(uint records, uint block_nums, uint col_nums, double block_percent, bool filter);
+
+  virtual double index_only_scan_time(uint idx_records, uint block_nums, uint col_nums, bool filter);
+
+  virtual double idxback_time(uint records, uint idx_records, uint idxblock_nums, uint block_nums, uint col_nums,
+                            double block_percent, bool filter, bool icp);
 
   /**
     The cost of reading a set of ranges from the table using an index

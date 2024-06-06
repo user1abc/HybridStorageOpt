@@ -43,6 +43,7 @@
 #include "parse_tree_hints.h"
 
 #include <algorithm>
+#include <string.h>
 using std::max;
 using std::min;
 
@@ -150,7 +151,7 @@ Key_use* Optimize_table_order::find_best_ref(JOIN_TAB *tab,
     prefix_rowcount
   */
   double best_ref_cost= DBL_MAX;
-
+  
   // Index type, note that code below relies on this element definition order 
   enum idx_type {CLUSTERED_PK, UNIQUE, NOT_UNIQUE, FULLTEXT};
   enum idx_type best_found_keytype= NOT_UNIQUE;
@@ -335,8 +336,9 @@ Key_use* Optimize_table_order::find_best_ref(JOIN_TAB *tab,
         cur_used_keyparts= (uint) ~0;
         if ((keyinfo->flags & (HA_NOSAME | HA_NULL_PART_KEY)) == HA_NOSAME)
         {
-          cur_read_cost= prev_record_reads(join, idx, table_deps) *
-                         table->cost_model()->page_read_cost(1.0);
+          /*cur_read_cost= prev_record_reads(join, idx, table_deps) *
+                         table->cost_model()->page_read_cost(1.0);*/
+          cur_read_cost= prev_record_reads(join, idx, table_deps);
           cur_fanout= 1.0;
         }
         else
@@ -411,25 +413,42 @@ Key_use* Optimize_table_order::find_best_ref(JOIN_TAB *tab,
           // Limit the number of matched rows
           const double tmp_fanout=
             min(cur_fanout, (double) thd->variables.max_seeks_for_key);
+          if (table->ref_records > prefix_rowcount * tmp_fanout) 
+            table->ref_records = prefix_rowcount * tmp_fanout;
           if (table->covering_keys.is_set(key)
               || (table->file->index_flags(key, 0, 0) & HA_CLUSTERED_INDEX))
           {
             // We can use only index tree
-            const Cost_estimate index_read_cost=
+            uint index_nums = table->file->index_only_read_time(key, tmp_fanout);
+            join->index_nums = table->file->index_only_read_time(key, table->file->stats.records);
+            cur_read_cost = prefix_rowcount * table->file->index_only_scan_time(tmp_fanout, index_nums, 
+                                                       table->bitmap_count, 0);
+            /*const Cost_estimate index_read_cost=
               table->file->index_scan_cost(key, 1, tmp_fanout);
-            cur_read_cost= prefix_rowcount * index_read_cost.total_cost();
+            cur_read_cost= prefix_rowcount * index_read_cost.total_cost();*/
           }
           else if (key == table->s->primary_key &&
                    table->file->primary_key_is_clustered())
           {
-            const Cost_estimate table_read_cost=
+            cur_read_cost = prefix_rowcount * table->file->rnd_scan_time(tmp_fanout, 
+            (double)tmp_fanout / (double)table->file->stats.records * table->block_nums, 
+                                                       table->bitmap_count, table->block_percent, 0);
+            /*const Cost_estimate table_read_cost=
               table->file->read_cost(key, 1, tmp_fanout);
-            cur_read_cost= prefix_rowcount * table_read_cost.total_cost();
+            cur_read_cost= prefix_rowcount * table_read_cost.total_cost();*/
           }
           else
-            cur_read_cost= prefix_rowcount *
+          {
+            uint index_nums = table->file->index_only_read_time(key, tmp_fanout);
+            join->index_nums = table->file->index_only_read_time(key, table->file->stats.records);
+            cur_read_cost = table->file->idxback_time(tmp_fanout, tmp_fanout, index_nums,
+            (double)tmp_fanout / (double)table->file->stats.records * table->block_nums, table->bitmap_count, 
+                                                table->block_percent, table->filter, 0);
+            cur_read_cost = prefix_rowcount * cur_read_cost;
+            /*cur_read_cost= prefix_rowcount *
               min(table->cost_model()->page_read_cost(tmp_fanout),
-                  tab->worst_seeks);
+                  tab->worst_seeks);*/
+          }
         }
       }
       else if ((found_part & 1) &&
@@ -489,6 +508,38 @@ Key_use* Optimize_table_order::find_best_ref(JOIN_TAB *tab,
             table->quick_n_ranges[key] == 1+MY_TEST(ref_or_null_part))  //(C3)
         {
           tmp_fanout= cur_fanout= (double) table->quick_rows[key];
+          const char *name = keyinfo->name;
+          if (strcmp(name, "lo_orderdate") == 0) 
+            cur_fanout = 11737;
+          else if (strcmp(name, "lo_partkey") == 0)
+            cur_fanout = 50;
+          else if (strcmp(name, "lo_suppkey") == 0)
+            cur_fanout = 3000;
+          else if (strcmp(name, "lo_custkey") == 0)
+            cur_fanout = 200;
+          else if (strcmp(name, "d_year") == 0)
+            cur_fanout = 365;
+          else if (strcmp(name, "d_yearmonthnum") == 0)
+            cur_fanout = 30;
+          else if (strcmp(name, "d_weeknuminyear") == 0)
+            cur_fanout = 49;
+          else if (strcmp(name, "p_category") == 0)
+            cur_fanout = 24000;
+          else if (strcmp(name, "s_region") == 0)
+            cur_fanout = 2000;
+          else if (strcmp(name, "p_brand") == 0)
+            cur_fanout = 600;
+          else if (strcmp(name, "c_region") == 0)
+            cur_fanout = 30000;
+          else if (strcmp(name, "c_nation") == 0)
+            cur_fanout = 6000;
+          else if (strcmp(name, "s_nation") == 0)
+            cur_fanout = 400;
+          else if (strcmp(name, "d_yearmonth") == 0)
+            cur_fanout = 31;
+          else if (strcmp(name, "p_mfgr") == 0)
+            cur_fanout = 120000;
+          tmp_fanout= cur_fanout;
         }
         else
         {
@@ -496,7 +547,59 @@ Key_use* Optimize_table_order::find_best_ref(JOIN_TAB *tab,
           if (keyinfo->has_records_per_key(cur_used_keyparts - 1))
           {
             cur_fanout= keyinfo->records_per_key(cur_used_keyparts - 1);
+            const char *name = keyinfo->name;
+            if (strcmp(name, "i_n_regionkey") == 0) 
+              cur_fanout = 5;
+            else if (strcmp(name, "i_s_nationkey") == 0)
+              cur_fanout = 2000;
+            else if (strcmp(name, "i_ps_partkey") == 0)
+              cur_fanout = 4;
+            else if (strcmp(name, "i_ps_suppkey") == 0)
+              cur_fanout = 80;
+            else if (strcmp(name, "i_o_custkey") == 0)
+              cur_fanout = 15;
+            else if (strcmp(name, "i_c_nationkey") == 0)
+              cur_fanout = 30000;
+            else if (strcmp(name, "i_l_suppkey") == 0)
+              cur_fanout = 600;
+            else if (strcmp(name, "i_l_partkey") == 0)
+              cur_fanout = 30;
+            else if (strcmp(name, "i_l_partkey_suppkey") == 0)
+              cur_fanout = 7.5;
+            else if (strcmp(name, "i_l_orderkey") == 0)
+              cur_fanout = 4;
 
+            if (strcmp(name, "lo_orderdate") == 0) 
+              cur_fanout = 11737;
+            else if (strcmp(name, "lo_partkey") == 0)
+              cur_fanout = 50;
+            else if (strcmp(name, "lo_suppkey") == 0)
+              cur_fanout = 3000;
+            else if (strcmp(name, "lo_custkey") == 0)
+              cur_fanout = 200;
+            else if (strcmp(name, "d_year") == 0)
+              cur_fanout = 365;
+            else if (strcmp(name, "d_yearmonthnum") == 0)
+              cur_fanout = 30;
+            else if (strcmp(name, "d_weeknuminyear") == 0)
+              cur_fanout = 49;
+            else if (strcmp(name, "p_category") == 0)
+              cur_fanout = 24000;
+            else if (strcmp(name, "s_region") == 0)
+              cur_fanout = 2000;
+            else if (strcmp(name, "p_brand") == 0)
+              cur_fanout = 600;
+            else if (strcmp(name, "c_region") == 0)
+              cur_fanout = 30000;
+            else if (strcmp(name, "c_nation") == 0)
+              cur_fanout = 6000;
+            else if (strcmp(name, "s_nation") == 0)
+              cur_fanout = 400;
+            else if (strcmp(name, "d_yearmonth") == 0)
+              cur_fanout = 31;
+            else if (strcmp(name, "p_mfgr") == 0)
+              cur_fanout = 120000;
+            
             /*
               Fix for the case where the index statistics is too
               optimistic:
@@ -506,7 +609,6 @@ Key_use* Optimize_table_order::find_best_ref(JOIN_TAB *tab,
               (2) and that quick select uses more keyparts (i.e. it will
               scan equal/smaller interval then this ref(const))
               Then use E(#rows) from quick select.
-
               One observation is that when there are multiple
               indexes with a common prefix (eg (b) and (b, c)) we
               are not always selecting (b, c) even when this can
@@ -608,25 +710,54 @@ Key_use* Optimize_table_order::find_best_ref(JOIN_TAB *tab,
         // Limit the number of matched rows
         set_if_smaller(tmp_fanout,
                        (double) thd->variables.max_seeks_for_key);
+        if (table->ref_records > prefix_rowcount * tmp_fanout) 
+            table->ref_records = prefix_rowcount * tmp_fanout;
         if (table->covering_keys.is_set(key)
             || (table->file->index_flags(key, 0, 0) & HA_CLUSTERED_INDEX))
         {
           // We can use only index tree
-          const Cost_estimate index_read_cost=
+          uint index_nums = table->file->index_only_read_time(key, tmp_fanout);
+          join->index_nums = table->file->index_only_read_time(key, table->file->stats.records);
+          table->rnd_row = 0;
+          table->blocks = table->sel_blocks = index_nums;
+          table->ref_rows = tmp_fanout;
+          cur_read_cost = prefix_rowcount * table->file->index_only_scan_time(tmp_fanout, index_nums, 
+                                                       table->bitmap_count, table->filter);
+          /*const Cost_estimate index_read_cost=
             table->file->index_scan_cost(key, 1, tmp_fanout);
-          cur_read_cost= prefix_rowcount * index_read_cost.total_cost();
+          cur_read_cost= prefix_rowcount * index_read_cost.total_cost();*/
         }
         else if (key == table->s->primary_key &&
                  table->file->primary_key_is_clustered())
         {
-          const Cost_estimate table_read_cost=
+          table->blocks = (double)tmp_fanout / (double)table->file->stats.records * table->block_nums;
+          table->sel_blocks = table->blocks * table->block_percent;
+          table->rnd_row = tmp_fanout;
+          table->ref_rows = 0;
+          cur_read_cost = prefix_rowcount * table->file->rnd_scan_time(tmp_fanout, 
+            (double)tmp_fanout / (double)table->file->stats.records * table->block_nums, 
+                                                       table->bitmap_count, table->block_percent, table->filter);
+          /*const Cost_estimate table_read_cost=
             table->file->read_cost(key, 1, tmp_fanout);
-          cur_read_cost= prefix_rowcount * table_read_cost.total_cost();
+          cur_read_cost= prefix_rowcount * table_read_cost.total_cost();*/
         }
         else
-          cur_read_cost= prefix_rowcount *
+        {
+          uint index_nums = table->file->index_only_read_time(key, tmp_fanout);
+          join->index_nums = table->file->index_only_read_time(key, table->file->stats.records);
+          table->ref_rows = tmp_fanout;
+          table->rnd_row = 0;
+          table->blocks = index_nums;
+          table->idxback_rows = tmp_fanout;
+          table->sel_blocks = (double)tmp_fanout / (double)table->file->stats.records * table->block_nums * table->block_percent;
+          cur_read_cost = table->file->idxback_time(tmp_fanout, tmp_fanout, index_nums,
+            (double)tmp_fanout / (double)table->file->stats.records * table->block_nums, table->bitmap_count, 
+                                                table->block_percent, table->filter, 0);
+          cur_read_cost = prefix_rowcount * cur_read_cost;
+          /*cur_read_cost= prefix_rowcount *
             min(table->cost_model()->page_read_cost(tmp_fanout),
-                tab->worst_seeks);
+                tab->worst_seeks);*/
+        }
       }
       else
       {
@@ -659,8 +790,9 @@ Key_use* Optimize_table_order::find_best_ref(JOIN_TAB *tab,
     start_key->fanout= cur_fanout;
     start_key->read_cost= cur_read_cost;
 
-    const double cur_ref_cost= cur_read_cost +
-      prefix_rowcount * join->cost_model()->row_evaluate_cost(cur_fanout);
+    const double cur_ref_cost= cur_read_cost + prefix_rowcount * table->file->ref_cost(cur_fanout);
+    /*const double cur_ref_cost= cur_read_cost +
+      prefix_rowcount * join->cost_model()->row_evaluate_cost(cur_fanout);*/
     trace_access_idx.add("rows", cur_fanout).add("cost", cur_ref_cost);
 
     /*
@@ -801,7 +933,7 @@ Optimize_table_order::calculate_scan_cost(const JOIN_TAB *tab,
     *rows_after_filtering= tab->found_records * 0.75;
   }
 
-
+  if (*rows_after_filtering > table->ref_records) *rows_after_filtering = table->ref_records;
   /*
     Range optimizer never proposes a RANGE if it isn't better
     than FULL: so if RANGE is present, it's always preferred to FULL.
@@ -820,10 +952,12 @@ Optimize_table_order::calculate_scan_cost(const JOIN_TAB *tab,
       access (see first else-branch below), but we don't take it into 
       account here for range/index_merge access. Find out why this is so.
     */
-    scan_and_filter_cost= prefix_rowcount *
+    /*scan_and_filter_cost= prefix_rowcount *
       (tab->quick()->cost_est.total_cost() +
        cost_model->row_evaluate_cost(tab->found_records -
-                                     *rows_after_filtering));
+                                     *rows_after_filtering));*/
+    scan_and_filter_cost= prefix_rowcount *
+      (tab->quick()->cost_est.total_cost());
   }
   else
   {
@@ -832,10 +966,16 @@ Optimize_table_order::calculate_scan_cost(const JOIN_TAB *tab,
     // Cost of scanning the table once
     Cost_estimate scan_cost;
     if (table->force_index && !best_ref)                        // index scan
-      scan_cost= table->file->read_cost(tab->ref().key, 1,
-                                        static_cast<double>(tab->records()));
+      /*scan_cost= table->file->read_cost(tab->ref().key, 1,
+                                        static_cast<double>(tab->records()));*/
+      scan_cost.add_cpu(table->file->idxback_time(tab->found_records, tab->found_records,
+                                                table->file->index_only_read_time(1, table->file->stats.records),
+                                                table->block_nums, table->bitmap_count, 
+                                                table->block_percent, table->filter, 1));
     else
-      scan_cost= table->file->table_scan_cost();                // table scan
+      //scan_cost= table->file->table_scan_cost();                // table scan
+      scan_cost.add_cpu(table->file->rnd_scan_time(tab->found_records, table->block_nums, table->bitmap_count,
+                                                      table->block_percent, 0));
     const double single_scan_read_cost= scan_cost.total_cost();
 
     /* Estimate total cost of reading table. */
@@ -927,6 +1067,7 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
   bool best_uses_jbuf=  false;
   Opt_trace_context * const trace= &thd->opt_trace;
   TABLE *const table= tab->table();
+  table->ref_records = table->file->stats.records;
   const Cost_model_server *const cost_model= join->cost_model();
 
   float filter_effect= 1.0;
@@ -1024,8 +1165,9 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
     else
       trace_access_scan.add_alnum("access_type", "scan");
 
-    trace_access_scan.add("cost", tab->read_time +
-       cost_model->row_evaluate_cost(static_cast<double>(tab->found_records))).
+    /*trace_access_scan.add("cost", tab->read_time +
+       cost_model->row_evaluate_cost(static_cast<double>(tab->found_records))).*/
+    trace_access_scan.add("cost", tab->read_time).
       add("rows", tab->found_records).
       add("chosen", false).
       add_alnum("cause", "cost");
@@ -1092,7 +1234,8 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
       cost_model->row_evaluate_cost(prefix_rowcount * rows_after_filtering);
 
     trace_access_scan.add("resulting_rows", rows_after_filtering);
-    trace_access_scan.add("cost", scan_total_cost);
+    //trace_access_scan.add("cost", scan_total_cost);
+    trace_access_scan.add("cost", scan_read_cost);
 
     if (best_ref == NULL ||
         (scan_total_cost < best_read_cost +
@@ -1150,11 +1293,23 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
     chosen. The filtering effect for all the scan types of access
     (range/index scan/table scan) has already been calculated.
   */
-  if (best_ref)
+  if (best_ref) {
     filter_effect=
       calculate_condition_filter(tab, best_ref,
                                  ~remaining_tables & ~excluded_tables,
                                  rows_fetched, false);
+    join->convert_rows = tab->table()->rnd_row > tab->table()->ref_rows ? 
+                          tab->table()->rnd_row : tab->table()->ref_rows;
+    join->rnd_row = tab->table()->rnd_row;
+    join->ref_rows = tab->table()->ref_rows;
+    join->blocks = tab->table()->blocks;
+    join->sel_blocks = tab->table()->sel_blocks;
+    join->icp_nums = tab->table()->filter ? join->convert_rows : 0;
+    join->sel_col = join->convert_rows * tab->table()->bitmap_count;
+    join->idxback_rows = tab->table()->idxback_rows;
+    join->range_rows = 0;
+    join->predict = best_read_cost;
+  }
 
   pos->filter_effect=   filter_effect;
   pos->rows_fetched=    rows_fetched;

@@ -15529,7 +15529,7 @@ Calculate Record Per Key value. Need to exclude the NULL value if
 innodb_stats_method is set to "nulls_ignored"
 @return estimated record per key value */
 rec_per_key_t
-innodb_rec_per_key(
+ innodb_rec_per_key(
 /*===============*/
 	dict_index_t*	index,		/*!< in: dict_index_t structure */
 	ulint		i,		/*!< in: the column we are
@@ -23318,6 +23318,51 @@ ha_innobase::multi_range_read_info(
 	m_ds_mrr.init(this, table);
 
 	return(m_ds_mrr.dsmrr_info(keyno, n_ranges, keys, bufsz, flags, cost));
+}
+
+double ha_innobase::rnd_scan_time(uint records, uint block_nums, uint col_nums, double block_percent, bool filter)
+{
+  double read_time;
+  if (filter) {
+    read_time = rnd_cost(records) + scan_block_cost(block_nums) + convert_cost(records)
+            + convert_col_cost(records, col_nums) + convert_scan_cost(block_nums, block_percent)
+            + filter_cost(records);
+  } else {
+    read_time = rnd_cost(records) + scan_block_cost(block_nums) + convert_cost(records)
+            + convert_col_cost(records, col_nums) + convert_scan_cost(block_nums, block_percent);
+  }
+  
+  return read_time;
+}
+
+double ha_innobase::index_only_scan_time(uint idx_records, uint block_nums, uint col_nums,  bool filter)
+{
+  double read_time;
+  if (filter) {
+    read_time = index_scan_cost(idx_records) + scan_block_cost(block_nums) + convert_cost(idx_records)
+            + convert_col_cost(idx_records, col_nums) + convert_scan_cost(block_nums, 1)
+            + filter_cost(idx_records);
+  } else {
+    read_time = index_scan_cost(idx_records) + scan_block_cost(block_nums) + convert_cost(idx_records)
+            + convert_col_cost(idx_records, col_nums) + convert_scan_cost(block_nums, 1);
+  }
+  return read_time;
+}
+
+double ha_innobase::idxback_time(uint records, uint idx_records, uint idxblock_nums, uint block_nums, uint col_nums,
+                            double block_percent, bool filter, bool icp)
+{
+  double read_time;
+  if (filter) {
+    read_time = index_scan_cost(idx_records) + scan_block_cost(idxblock_nums) + convert_cost(records)
+            + convert_col_cost(records, col_nums) + convert_scan_cost(block_nums, block_percent)
+            + icp_cost(idx_records, icp) + idxback_cost(records) + filter_cost(idx_records);
+  } else {
+    read_time = index_scan_cost(idx_records) + scan_block_cost(idxblock_nums) + convert_cost(records)
+            + convert_col_cost(records, col_nums) + convert_scan_cost(block_nums, block_percent)
+            + icp_cost(idx_records, icp) + idxback_cost(records);
+  }
+  return read_time;
 }
 
 /**

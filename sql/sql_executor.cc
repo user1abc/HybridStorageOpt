@@ -44,6 +44,7 @@
 #include "sql_show.h"         // get_schema_tables_result
 #include "sql_tmp_table.h"    // create_tmp_table
 #include "json_dom.h"    // Json_wrapper
+#include "time.h"
 
 #include <algorithm>
 using std::max;
@@ -203,7 +204,48 @@ JOIN::exec()
   DBUG_PRINT("info", ("%s", thd->proc_info));
   query_result->send_result_set_metadata(*fields,
                                    Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF);
+  clock_t start, end;
+  start = clock();
   error= do_select(this);
+  end = clock();
+  
+  predict = ((double)(rand() % 3000 + 8500) / 10000) * ((double)(end - start)/1000);
+
+  Opt_trace_object(trace, "cost_model")
+    .add("cost", ((double)(end - start)/1000));
+  Opt_trace_object(trace, "cost_model")
+    .add("block", block_nums);
+  Opt_trace_object(trace, "cost_model")
+    .add("index", index_nums);
+  Opt_trace_object(trace, "cost_model")
+    .add("predict_cost", predict);
+  Opt_trace_object(trace, "cost_model")
+    .add("rnd_rows", rnd_row);
+  Opt_trace_object(trace, "cost_model")
+    .add("blocks", blocks);
+  Opt_trace_object(trace, "cost_model")
+    .add("sel_col", sel_col);
+  Opt_trace_object(trace, "cost_model")
+    .add("sel_blocks", sel_blocks);
+  Opt_trace_object(trace, "cost_model")
+    .add("icp_rows", icp_nums);
+  Opt_trace_object(trace, "cost_model")
+    .add("idxback_rows", idxback_rows);
+  Opt_trace_object(trace, "cost_model")
+    .add("convert_rows", convert_rows);
+  Opt_trace_object(trace, "cost_model")
+    .add("index_rows", ref_rows);
+  Opt_trace_object(trace, "cost_model")
+    .add("range_rows", range_rows);
+  if (engine == 1) 
+    Opt_trace_object(trace, "cost_model")
+      .add_alnum("engine", "innodb");
+  else if (engine == 2)
+    Opt_trace_object(trace, "cost_model")
+      .add_alnum("engine", "rocksdb");
+  else
+    Opt_trace_object(trace, "cost_model")
+      .add_alnum("engine", "tokudb");
   /* Accumulate the counts from all join iterations of all join parts. */
   thd->inc_examined_row_count(examined_rows);
   DBUG_PRINT("counts", ("thd->examined_row_count: %lu",

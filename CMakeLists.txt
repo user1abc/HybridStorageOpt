@@ -469,6 +469,8 @@ IF(WITH_ASAN)
   ENDIF()
 ENDIF()
 
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+
 OPTION(WITH_MSAN "Enable memory sanitizer" OFF)
 IF(WITH_MSAN)
   MY_SANITIZER_CHECK("-fsanitize=memory -fsanitize-memory-track-origins -fsanitize-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/cmake/msan-blacklist.txt"

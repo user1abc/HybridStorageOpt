@@ -542,6 +542,59 @@ protected:
 
         /** If mysql has locked with external_lock() */
         bool                    m_mysql_has_locked;
+public:
+    double rnd_cost(uint records)
+    { return m_scan_cost * records; }
+
+    double scan_block_cost(uint block_nums)
+    { return block_nums * m_scan_block_cost; }
+
+    double convert_cost(uint records)
+    { return m_convert_cost * records; }
+
+    double convert_col_cost(uint records, uint col_nums)
+    { return m_convert_col_cost * col_nums * records; }
+
+    double convert_scan_cost(uint block_nums, double block_percent)
+    { return m_convert_scan_cost * block_nums * block_percent; }
+    
+    int engine_num()
+	{ return 1;}
+
+    double icp_cost(uint records, bool icp)
+    { return icp ? m_icp_cost * records : 0; }
+
+    double idxback_cost(uint records)
+    { return m_idxback_cost * records; }
+
+    double index_scan_cost(uint records)
+    { return m_index_scan_cost * records; }
+
+    double ref_cost(uint records)
+    { return m_ref_cost * records; }
+
+    double range_cost(uint records)
+    { return m_range_cost * records; }
+
+    double filter_cost(uint records)
+    { return m_filter_cost * records; }
+
+    double rnd_scan_time(uint records, uint block_nums, uint col_nums, double block_percent, bool filter);
+    double index_only_scan_time(uint idx_records, uint block_nums, uint col_nums, bool filter);
+    double idxback_time(uint records, uint idx_records, uint idxblock_nums, uint block_nums, uint col_nums,
+                            double block_percent, bool filter, bool icp);
+private:
+    double m_scan_cost = 0.14;
+    double m_scan_block_cost = 2.293;
+    double m_convert_col_cost = 0.02;
+    double m_filter_cost = 0;
+    double m_convert_scan_cost = 0;
+    double m_icp_cost = 0.007;
+    double m_idxback_cost = 0.637;
+    double m_convert_cost = 0.24;
+    double m_index_scan_cost = 0.099;
+    double m_ref_cost = 0;
+    double m_range_cost = 0.025;
 };
 
 

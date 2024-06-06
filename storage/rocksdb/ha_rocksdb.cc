@@ -15369,6 +15369,51 @@ double ha_rocksdb::read_time(uint index, uint ranges, ha_rows rows) {
   DBUG_RETURN((rows / 20.0) + 1);
 }
 
+double ha_rocksdb::rnd_scan_time(uint records, uint block_nums, uint col_nums, double block_percent, bool filter)
+{
+  double read_time;
+  if (filter) {
+    read_time = rnd_cost(records) + scan_block_cost(block_nums) + convert_cost(records)
+            + convert_col_cost(records, col_nums) + convert_scan_cost(block_nums, block_percent)
+            + filter_cost(records);
+  } else {
+    read_time = rnd_cost(records) + scan_block_cost(block_nums) + convert_cost(records)
+            + convert_col_cost(records, col_nums) + convert_scan_cost(block_nums, block_percent);
+  }
+  
+  return read_time;
+}
+
+double ha_rocksdb::index_only_scan_time(uint idx_records, uint block_nums, uint col_nums,  bool filter)
+{
+  double read_time;
+  if (filter) {
+    read_time = index_scan_cost(idx_records) + scan_block_cost(block_nums) + convert_cost(idx_records)
+            + convert_col_cost(idx_records, col_nums) + convert_scan_cost(block_nums, 1)
+            + filter_cost(idx_records);
+  } else {
+    read_time = index_scan_cost(idx_records) + scan_block_cost(block_nums) + convert_cost(idx_records)
+            + convert_col_cost(idx_records, col_nums) + convert_scan_cost(block_nums, 1);
+  }
+  return read_time;
+}
+
+double ha_rocksdb::idxback_time(uint records, uint idx_records, uint idxblock_nums, uint block_nums, uint col_nums,
+                            double block_percent, bool filter, bool icp)
+{
+  double read_time;
+  if (filter) {
+    read_time = index_scan_cost(idx_records) + scan_block_cost(idxblock_nums) + convert_cost(records)
+            + convert_col_cost(records, col_nums) + convert_scan_cost(block_nums, block_percent)
+            + icp_cost(idx_records, icp) + idxback_cost(records) + filter_cost(idx_records);
+  } else {
+    read_time = index_scan_cost(idx_records) + scan_block_cost(idxblock_nums) + convert_cost(records)
+            + convert_col_cost(records, col_nums) + convert_scan_cost(block_nums, block_percent)
+            + icp_cost(idx_records, icp) + idxback_cost(records);
+  }
+  return read_time;
+}
+
 void ha_rocksdb::print_error(int error, myf errflag) {
   if (error == HA_ERR_ROCKSDB_STATUS_BUSY) {
     error = HA_ERR_LOCK_DEADLOCK;

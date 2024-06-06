@@ -2840,17 +2840,24 @@ int test_quick_select(THD *thd, key_map keys_to_use,
   DBUG_PRINT("enter",("keys_to_use: %lu  prev_tables: %lu  const_tables: %lu",
 		      (ulong) keys_to_use.to_ulonglong(), (ulong) prev_tables,
 		      (ulong) const_tables));
-
+  double scan_time;
   const Cost_model_server *const cost_model= thd->cost_model();
   TABLE *const head= tab->table();
+  uint col_nums = head->bitmap_count;
+  bool filter = head->filter;
+  uint block_nums = head->block_nums;
+  double block_percent = head->block_percent;  
   ha_rows records= head->file->stats.records;
   if (!records)
     records++;					/* purecov: inspected */
-  double scan_time=
-    cost_model->row_evaluate_cost(static_cast<double>(records)) + 1;
-  Cost_estimate cost_est= head->file->table_scan_cost();
+  //double scan_time=
+  //  cost_model->row_evaluate_cost(static_cast<double>(records)) + 1;
+  //Cost_estimate cost_est= head->file->table_scan_cost();
+  //cost_est.add_io(1.1);
+  //cost_est.add_cpu(scan_time);
+  Cost_estimate cost_est;
+  cost_est.add_cpu(head->file->rnd_scan_time(records, block_nums, col_nums, block_percent, filter));
   cost_est.add_io(1.1);
-  cost_est.add_cpu(scan_time);
   if (ignore_table_scan)
   {
     scan_time= DBL_MAX;
@@ -3008,20 +3015,33 @@ int test_quick_select(THD *thd, key_map keys_to_use,
     param.key_parts_end=key_parts;
 
     /* Calculate cost of full index read for the shortest covering index */
-    if (!head->covering_keys.is_clear_all())
+    if (!head->covering_keys.is_clear_all() && !(head->force_index))
     {
       int key_for_use= find_shortest_key(head, &head->covering_keys);
-      Cost_estimate key_read_time=
-        param.table->file->index_scan_cost(key_for_use, 1,
-                                           static_cast<double>(records));
-      key_read_time.add_cpu(cost_model->row_evaluate_cost(
-        static_cast<double>(records)));
+      uint index_nums = param.table->file->index_only_read_time(key_for_use, 
+                                                rows2double(records));
+      tab->join()->index_nums = index_nums;
+      //Cost_estimate key_read_time=
+      //  param.table->file->index_scan_cost(key_for_use, 1,
+      //                                     static_cast<double>(records));
+      //key_read_time.add_cpu(cost_model->row_evaluate_cost(
+      //  static_cast<double>(records)));
+      Cost_estimate key_read_time;
+      key_read_time.add_cpu(param.table->file->index_only_scan_time(records, index_nums, 
+                                                col_nums, filter));
 
       bool chosen= false;
       if (key_read_time < cost_est)
       {
         cost_est= key_read_time;
         chosen= true;
+        tab->join()->rnd_row = 0;
+        tab->join()->convert_rows = tab->join()->ref_rows = records;
+        tab->join()->block_nums = index_nums;
+        tab->join()->icp_nums = filter ? records : 0;
+        tab->join()->sel_col = records * col_nums;
+        tab->join()->sel_blocks = index_nums;
+        tab->join()->predict = cost_est.total_cost();
       }
 
       Opt_trace_object trace_cov(trace,
@@ -5826,6 +5846,10 @@ static TRP_RANGE *get_key_scans_params(PARAM *param, SEL_TREE *tree,
   Cost_estimate read_cost= *cost_est;
   DBUG_ENTER("get_key_scans_params");
   Opt_trace_context * const trace= &param->thd->opt_trace;
+  uint col_nums = param->table->bitmap_count;
+  bool filter = param->table->filter;
+  uint block_nums = param->table->block_nums;
+  double block_percent = param->table->block_percent;
   /*
     Note that there may be trees that have type SEL_TREE::KEY but contain no
     key reads at all, e.g. tree for expression "key1 is not null" where key1
@@ -5844,8 +5868,16 @@ static TRP_RANGE *get_key_scans_params(PARAM *param, SEL_TREE *tree,
     {
       ha_rows found_records;
       Cost_estimate cost;
+      Cost_estimate found_read_time;
       uint mrr_flags, buf_size;
       uint keynr= param->real_keynr[idx];
+      uint index_nums;
+      double blocks;
+      double sel_blocks;
+      uint idxback_rows;
+      uint rnd_row = 0;
+      uint ref_rows = 0;
+
       if (key->type == SEL_ARG::MAYBE_KEY ||
           key->maybe_flag)
         param->needed_reg->set_bit(keynr);
@@ -5859,7 +5891,38 @@ static TRP_RANGE *get_key_scans_params(PARAM *param, SEL_TREE *tree,
       found_records= check_quick_select(param, idx, read_index_only, key,
                                         update_tbl_stats, &mrr_flags,
                                         &buf_size, &cost);
-
+      if (!keynr) {
+        blocks = (double)found_records / (double)param->table->file->stats.records * block_nums;
+        rnd_row = found_records;
+        ref_rows = 0;
+        idxback_rows = 0;
+        sel_blocks = blocks * block_percent;
+        found_read_time.add_cpu(param->table->file->rnd_scan_time(found_records, 
+          sel_blocks, col_nums, block_percent, filter)
+                        + param->table->file->range_cost(found_records));
+      } else {
+        index_nums = param->table->file->index_only_read_time(keynr, 
+                                                found_records);
+        ref_rows = found_records;
+        rnd_row = 0;
+        idxback_rows = 0;
+        param->thd->lex->current_select()->join->index_nums = 
+            param->table->file->index_only_read_time(keynr, param->table->file->stats.records);
+        if (read_index_only) {
+          blocks = sel_blocks = index_nums;
+          found_read_time.add_cpu(param->table->file->index_only_scan_time(found_records, index_nums, 
+                                                col_nums, filter)
+                                                + param->table->file->range_cost(found_records));
+        }
+        else {
+          blocks = index_nums;
+          sel_blocks = block_nums * block_percent;
+          idxback_rows = found_records;
+          found_read_time.add_cpu(param->table->file->idxback_time(found_records, found_records, index_nums,
+                                                          block_nums, col_nums, block_percent, filter, 0)
+                                                + param->table->file->range_cost(found_records));
+        }
+      }
 #ifdef OPTIMIZER_TRACE
       // check_quick_select() says don't use range if it returns HA_POS_ERROR
       if (found_records != HA_POS_ERROR &&
@@ -5876,12 +5939,18 @@ static TRP_RANGE *get_key_scans_params(PARAM *param, SEL_TREE *tree,
                                   key, key_part, false);
         trace_range.end(); // NOTE: ends the tracing scope
 
+        /*trace_idx.add("index_dives_for_eq_ranges", !param->use_index_statistics).
+          add("rowid_ordered", param->is_ror_scan).
+          add("using_mrr", !(mrr_flags & HA_MRR_USE_DEFAULT_IMPL)).
+          add("index_only", read_index_only).
+          add("rows", found_records).
+          add("cost", cost); */
         trace_idx.add("index_dives_for_eq_ranges", !param->use_index_statistics).
           add("rowid_ordered", param->is_ror_scan).
           add("using_mrr", !(mrr_flags & HA_MRR_USE_DEFAULT_IMPL)).
           add("index_only", read_index_only).
           add("rows", found_records).
-          add("cost", cost);
+          add("cost", found_read_time.total_cost());
         if (param->thd->optimizer_switch_flag(
                 OPTIMIZER_SWITCH_FAVOR_RANGE_SCAN))
           trace_idx.add("revised_cost", cost.total_cost() * 0.1);
@@ -5897,7 +5966,7 @@ static TRP_RANGE *get_key_scans_params(PARAM *param, SEL_TREE *tree,
         tree->ror_scans_map.set_bit(idx);
       }
 
-      if (found_records != HA_POS_ERROR &&
+      /*if (found_records != HA_POS_ERROR &&
           read_cost > cost)
       {
         trace_idx.add("chosen", true);
@@ -5907,6 +5976,26 @@ static TRP_RANGE *get_key_scans_params(PARAM *param, SEL_TREE *tree,
         best_idx= idx;
         best_mrr_flags= mrr_flags;
         best_buf_size=  buf_size;
+      }*/
+      if (found_records != HA_POS_ERROR &&
+          read_cost > found_read_time)
+      {
+        trace_idx.add("chosen", true);
+        read_cost=    found_read_time;
+        best_records= found_records;
+        key_to_read=  key;
+        best_idx= idx;
+        best_mrr_flags= mrr_flags;
+        best_buf_size=  buf_size;
+        param->thd->lex->current_select()->join->convert_rows = found_records;
+        param->thd->lex->current_select()->join->rnd_row = rnd_row;
+        param->thd->lex->current_select()->join->ref_rows = ref_rows;
+        param->thd->lex->current_select()->join->blocks = blocks;
+        param->thd->lex->current_select()->join->icp_nums = filter ? found_records : 0;
+        param->thd->lex->current_select()->join->sel_col = found_records * col_nums;
+        param->thd->lex->current_select()->join->sel_blocks = sel_blocks;
+        param->thd->lex->current_select()->join->idxback_rows = idxback_rows;
+        param->thd->lex->current_select()->join->range_rows = found_records;
       }
       else
       {

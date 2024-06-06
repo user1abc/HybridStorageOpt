@@ -1,0 +1,11 @@
+create /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libperconaserverclient.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libclientlib.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libdbug.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libstrings.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libvio.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libmysys.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libmysys_ssl.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libzlib.a
+save
+end
+

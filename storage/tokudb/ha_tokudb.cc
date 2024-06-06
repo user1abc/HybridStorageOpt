@@ -6081,7 +6081,7 @@ int ha_tokudb::info(uint flag) {
     if (flag & HA_STATUS_VARIABLE) {
         stats.records = share->row_count() + share->rows_from_locked_table;
         stats.deleted = 0;
-        if (!(flag & HA_STATUS_NO_LOCK)) {
+        if (flag & HA_STATUS_NO_LOCK) {
             error = txn_begin(db_env, NULL, &txn, DB_READ_UNCOMMITTED, ha_thd());
             if (error) {
                 goto cleanup;
@@ -6171,7 +6171,7 @@ int ha_tokudb::info(uint flag) {
             stats.records++;
         }
     }
-    if ((flag & HA_STATUS_CONST)) {
+    if ((flag & (HA_STATUS_CONST | HA_STATUS_VARIABLE))) {
         stats.max_data_file_length = 9223372036854775807ULL;
         share->set_cardinality_counts_in_table(table);
     }
@@ -7748,6 +7748,7 @@ double ha_tokudb::keyread_time(uint index, uint ranges, ha_rows rows)
 {
     TOKUDB_HANDLER_DBUG_ENTER("%u %u %" PRIu64, index, ranges, (uint64_t) rows);
     double ret_val;
+    THD* thd = ha_thd();
     if (index == primary_key || key_is_clustering(&table->key_info[index])) {
         ret_val = read_time(index, ranges, rows);
         DBUG_RETURN(ret_val);
@@ -7760,9 +7761,12 @@ double ha_tokudb::keyread_time(uint index, uint ranges, ha_rows rows)
       blocks read. This model does not take into account clustered indexes -
       engines that support that (e.g. InnoDB) may want to overwrite this method.
     */
-    double keys_per_block= (stats.block_size/2.0/
+    double keys_per_block= (tokudb::sysvars::read_block_size(thd)/2.0/
                             (table->key_info[index].key_length +
                              ref_length) + 1);
+    /*double keys_per_block= (stats.block_size/2.0/
+                            (table->key_info[index].key_length +
+                             ref_length) + 1);*/
     ret_val = (rows + keys_per_block - 1)/ keys_per_block;
     TOKUDB_HANDLER_DBUG_RETURN_DOUBLE(ret_val);
 }
@@ -7833,6 +7837,51 @@ double ha_tokudb::index_only_read_time(uint keynr, double records) {
     TOKUDB_HANDLER_DBUG_ENTER("%u %f", keynr, records);
     double ret_val = keyread_time(keynr, 1, (ha_rows)records);
     TOKUDB_HANDLER_DBUG_RETURN_DOUBLE(ret_val);
+}
+
+double ha_tokudb::rnd_scan_time(uint records, uint block_nums, uint col_nums, double block_percent, bool filter)
+{
+  double read_time;
+  if (filter) {
+    read_time = rnd_cost(records) + scan_block_cost(block_nums) + convert_cost(records)
+            + convert_col_cost(records, col_nums) + convert_scan_cost(block_nums, block_percent)
+            + filter_cost(records);
+  } else {
+    read_time = rnd_cost(records) + scan_block_cost(block_nums) + convert_cost(records)
+            + convert_col_cost(records, col_nums) + convert_scan_cost(block_nums, block_percent);
+  }
+  
+  return read_time;
+}
+
+double ha_tokudb::index_only_scan_time(uint idx_records, uint block_nums, uint col_nums,  bool filter)
+{
+  double read_time;
+  if (filter) {
+    read_time = index_scan_cost(idx_records) + scan_block_cost(block_nums) + convert_cost(idx_records)
+            + convert_col_cost(idx_records, col_nums) + convert_scan_cost(block_nums, 1)
+            + filter_cost(idx_records);
+  } else {
+    read_time = index_scan_cost(idx_records) + scan_block_cost(block_nums) + convert_cost(idx_records)
+            + convert_col_cost(idx_records, col_nums) + convert_scan_cost(block_nums, 1);
+  }
+  return read_time;
+}
+
+double ha_tokudb::idxback_time(uint records, uint idx_records, uint idxblock_nums, uint block_nums, uint col_nums,
+                            double block_percent, bool filter, bool icp)
+{
+  double read_time;
+  if (filter) {
+    read_time = index_scan_cost(idx_records) + scan_block_cost(idxblock_nums) + convert_cost(records)
+            + convert_col_cost(records, col_nums) + convert_scan_cost(block_nums, block_percent)
+            + icp_cost(idx_records, icp) + idxback_cost(records) + filter_cost(idx_records);
+  } else {
+    read_time = index_scan_cost(idx_records) + scan_block_cost(idxblock_nums) + convert_cost(records)
+            + convert_col_cost(records, col_nums) + convert_scan_cost(block_nums, block_percent)
+            + icp_cost(idx_records, icp) + idxback_cost(records);
+  }
+  return read_time;
 }
 
 //

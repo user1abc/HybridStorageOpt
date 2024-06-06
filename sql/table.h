@@ -1099,6 +1099,18 @@ public:
   uchar		*null_flags;
   my_bitmap_map	*bitmap_init_value;
   MY_BITMAP     def_read_set, def_write_set, tmp_set; /* containers */
+
+  bool filter;
+  double block_percent;
+  uint     block_nums;
+  uint     index_nums;
+  uint bitmap_count;
+  uint ref_records;
+  double blocks;
+  double sel_blocks;
+  uint idxback_rows;
+  uint rnd_row;
+  uint ref_rows;
   /*
     Bitmap of fields that one or more query condition refers to. Only
     used if optimizer_condition_fanout_filter is turned 'on'.

@@ -1,0 +1,23 @@
+create /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libmysqld.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libdbug.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libstrings.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libregex.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libmysys.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libmysys_ssl.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libvio.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libzlib.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libarchive_embedded.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libblackhole_embedded.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libcsv_embedded.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libfederated_embedded.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libheap_embedded.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libinnobase_embedded.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/liblz4_lib.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libmyisam_embedded.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libmyisammrg_embedded.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libpartition_embedded.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libngram_parser_embedded.a
+addlib /home/xzf/percona/percona-server-5.7.44-48/archive_output_directory/libsql_embedded.a
+save
+end
+

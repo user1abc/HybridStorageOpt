@@ -260,6 +260,7 @@
   evaluation at context analysis stage.
 */
 
+
 /*
   Don't evaluate this subquery during statement prepare even if
   it's a constant one. The flag is switched off in the end of
