@@ -1,12 +1,4 @@
-Percona Server 5.7
+This is a modified version of Percona Server 5.7 which applies a hierarchical storage cost model for different storage engines including innodb, rocksdb, tokudb.
 
-Percona Server is a branch of MySQL 5.7 bringing higher performance,
-reliability and more features.
+The main modifications are in sql_optimizer.cc, sql_select.cc and opt_range.cc
 
-http://www.percona.com/software/percona-server/
-
-Documentation: http://www.percona.com/doc/percona-server/5.7
-
-Bug Tracker: https://jira.percona.com/projects/PS
-
-Sources: https://github.com/percona/percona-server
